@@ -93,6 +93,26 @@ abline(h=0, lty=1, lwd=3)
 ### Elimination suggestions
 
 # Define variable selection functions (created by Professor Spitzner)
+get.model.str <- function(var.in, resp.name, reg.names) {
+  var.in.idx <- which(var.in)
+  model.str <- paste(resp.name, "~")
+  first.in <- TRUE
+  for (iVAR in var.in.idx) {
+    if (first.in) {
+      model.str <- paste(model.str, reg.names[iVAR])
+      first.in <- FALSE
+    } else {
+      model.str <- paste(model.str, "+", reg.names[iVAR])
+    }
+  }
+  return(model.str)
+}
+
+eval.lm <- function(model.str, data.name) {
+  lm.call.str <- paste("reg.lm <- lm(", model.str, ", data=", data.name, ")")
+  eval(parse(text=lm.call.str))
+  return(reg.lm)
+}
 forward.step <- function(curr.var.in, alpha.in, resp.name, reg.names, data.name) {
   curr.var.out.idx <- which(!curr.var.in)
   enter.idx <- NA
@@ -288,10 +308,17 @@ qqnorm(data$log_wins)
 qqline(data$log_wins)
   # This qqplot is much more normal
 
+### Set up cross-validation
+  # Set up the cross validation so train contains 4/5 of the data and test contains 1/5 of data
+n <- nrow(data)
+samp <- sample(n, 4*n/5, replace=F)
+train <- data[samp, ]
+test <- data[-samp, ]
+
 ### Elimination log models (including Cmp)
 resp.name <- "log_wins"
 reg.names <- c("Att", "Cmp", "Yds", "TD", "Int","Sk","Fmb","Cmp.","Y.A","TD_pct","Int_pct")
-data.name <- "data"
+data.name <- "train"
 alpha.out <- 0.10
 alpha.in <- 0.25
 backward_elim_log <- backward.elimination(alpha.out, resp.name, reg.names, data.name)
@@ -302,8 +329,8 @@ stepwise_select <- stepwise.selection(alpha.in, alpha.out, resp.name, reg.names,
   # "Final model: log_wins ~ Sk + Fmb + Y.A"
 
 ### Backward elimination model on log(wins)
-backward_lin_log <- lm(log_wins ~ Cmp + Yds + Int + Sk + Fmb + Cmp., data=data)
-summary(backward_lin_log) # adj. r-squared = 0.1154, huge improvement
+backward_lin_log <- lm(log_wins ~ Cmp + Yds + Int + Sk + Fmb + Cmp., data=train)
+summary(backward_lin_log) # adj. r-squared = 0.1171, huge improvement
 
 # Analyze residual plots
 fitted_back_log <- fitted(backward_lin_log)
@@ -319,10 +346,10 @@ cor(new_data$Cmp, new_data$Cmp.) # 0.7616852, not great
 
 studentized_resids <- rstandard(backward_lin_log)
 major_outlier_rows <- which(abs(studentized_resids) > 3) # only one observation
-new_data[21,]
+new_data[c(21,36), ]
 outlier_rows <- which(abs(studentized_resids) > 2)
 outliers <- new_data[c(21,33,54,66,91,209,228,239,276,292,304),] # outliers
-mean(outliers$win_count)
+mean(outliers$win_count) # 40.18182 (very different from the initial linear regression)
 
 hat_vals_back <- hatvalues(backward_lin_log)
 res_back <- resid(backward_lin_log)
@@ -336,28 +363,28 @@ mse_back_log <- anova(backward_lin_log)[7,3]
 
 summary(backward_lin_log)$coefficients
 # Estimate  Std. Error   t value     Pr(>|t|)
-# (Intercept)  1.22924206 0.541935785  2.268243 2.401797e-02
-# Cmp         -0.17875896 0.046189218 -3.870145 1.332269e-04
-# Yds          0.01686014 0.003418863  4.931506 1.347134e-06
-# Int         -0.19465137 0.137948055 -1.411048 1.592563e-01
-# Sk          -0.12665682 0.058178523 -2.177037 3.024939e-02
-# Fmb         -1.09879792 0.351821688 -3.123167 1.962085e-03
-# Cmp.         3.36111803 1.300834314  2.583817 1.023945e-02
+# (Intercept)  1.43158798 0.587714224  2.435857 1.558224e-02
+# Cmp         -0.15732574 0.053916653 -2.917943 3.856558e-03
+# Yds          0.01667887 0.003880976  4.297596 2.507069e-05
+# Int         -0.21307439 0.151471862 -1.406693 1.608067e-01
+# Sk          -0.11356091 0.064602382 -1.757844 8.004355e-02
+# Fmb         -0.99869792 0.376758377 -2.650765 8.563110e-03
+# Cmp.         2.41619594 1.462851156  1.651703 9.989740e-02
 
 confint(backward_lin_log, level=0.95)
-# 2.5 %      97.5 %
-#   (Intercept)  0.16280776  2.29567636
-# Cmp         -0.26965121 -0.08786670
-# Yds          0.01013242  0.02358787
-# Int         -0.46610888  0.07680613
-# Sk          -0.24114192 -0.01217172
-# Fmb         -1.79112111 -0.40647472
-# Cmp.         0.80130492  5.92093114
+#                 2.5 %      97.5 %
+# (Intercept)  0.273875466  2.58930050
+# Cmp         -0.263533794 -0.05111769
+# Yds          0.009033902  0.02432383
+# Int         -0.511452181  0.08530340
+# Sk          -0.240818316  0.01369649
+# Fmb         -1.740857744 -0.25653809
+# Cmp.        -0.465410494  5.29780238
 
 
 
 ### Forward and stepwise selection model on log(wins)
-forward_lin_log <- lm(log_wins ~ Sk + Fmb + Y.A, data=new_data)
+forward_lin_log <- lm(log_wins ~ Sk + Fmb + Y.A, data=train)
 summary(forward_lin_log)
 
 # Analyze residual plots
@@ -378,11 +405,27 @@ adj_forward_log <- summary(forward_lin_log)$adj.r.squared
 mse_forward_log <- anova(forward_lin_log)[4,3]
 
 
+### Cross-validation of logarithmic functions
+back_preds <- predict(backward_lin_log, newdata = test)
+mse_back_preds <- mean(back_preds - test$log_wins)^2
+  # 0.02696518
+
+forward_preds <- predict(forward_lin_log, newdata = test)
+mse_forward_preds <- mean(forward_preds - test$log_wins)^2
+  # 0.02856595
+
 ## Conclusion: Still low R-squared values, but residuals are much better with a logarithmic transformation 
-## However, f-statistic of each regression is large and the p-value is significant. ##
+## However, f-statistic of each regression is large and the p-value is significant. 
+## When looking at the results from the cross-validation process, it seems that the backwards elimination
+## suggested model, which includes Cmp, Yds, Int, Sk, Fmb, and Cmp. as regressor variables is a better
+## fit to the data, because the mean squared error of the predictions compared to the actual values in
+## the test dataset is smaller in the backwards elimination model compared to the forward selection and 
+## piecewise selection recommended regression. So, we conclude that the most adequate model in predicting
+## the logarithmic wins of a quarterback from their average statistics over their first 8 games is the
+## backwards elimination model. ##
 
 ### Log functions with quadratic terms
-quad_forward <- lm(log_wins ~ poly(Sk,2) + poly(Fmb,2) + poly(Y.A, 2), data=new_data)
+quad_forward <- lm(log_wins ~ poly(Sk,2) + poly(Fmb,2) + poly(Y.A, 2), data=data)
 summary(quad_forward)
   # Increases adj. R-squared but decreasese the F-statistic, so we will not use this in our analysis
 quad_forward_interaction <- lm(log_wins ~ poly(Sk,2) + poly(Fmb,2) + poly(Y.A, 2) + Sk*Fmb + Sk*Y.A + Fmb*Y.A, data=new_data)
@@ -392,7 +435,7 @@ summary(quad_forward_interaction)
 ##### Ridge Regression #####
 # All regressors model 
 new_data 
-y.vect <- new_data$log_wins
+y.vect <- data$log_wins
 X0.mat <- as.matrix(new_data[,c(3:9, 12:15)])
 
 ridge_all_regressors <- glmnet(X0.mat, y.vect, alpha=0)
@@ -418,7 +461,7 @@ coefficients(ridge_all_regressors_fix)
 ridge_all_regressors_fix$dev.ratio # 0.1217926 (better than the linear version)
 
 # Backward elimination regressors applied to the ridge regression
-y.vect <- new_data$log_wins
+y.vect <- data$log_wins
 X0.mat.new <- as.matrix(new_data[,c(3,5, 7:9,12)])
 ridge_back <- glmnet(X0.mat.new, y.vect, alpha=0)
 summary(ridge_back)
@@ -441,8 +484,8 @@ ridge_back_fix$dev.ratio # 0.1139675 (not very good)
 
 # Logistic Ridge Regression
 # Sk + Fmb + Y.A
-X0.log.mat <- as.matrix(new_data[,c(8:9,13)])
-y.vect <- new_data$log_wins
+X0.log.mat <- as.matrix(data[,c(8:9,13)])
+y.vect <- data$log_wins
 
 ridge_log_reg <- glmnet(X0.log.mat, y.vect, alpha=0)
 plot(ridge_log_reg, xvar="lambda", label=TRUE) # lambda=0.75
